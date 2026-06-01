@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}All Boards — Admin{% endblock %}
+{% block content %}
+<div class="admin-page">
+  <h1>All Boards</h1>
+  {% if boards %}
+    <table class="boards-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phrase</th>
+          <th>Correct</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in boards %}
+          <tr>
+            <td>{{ b['name'] }}</td>
+            <td>{{ b['email'] }}</td>
+            <td><code>{{ b['phrase'] }}</code></td>
+            <td>{{ b['hits'] }}</td>
+            <td>{{ b['created_at'][:10] }}</td>
+            <td>
+              <a href="{{ url_for('admin_board', board_id=b['id']) }}" class="btn btn-sm">Edit</a>
+              <a href="{{ url_for('board', phrase=b['phrase']) }}" class="btn btn-sm btn-ghost" target="_blank">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No boards yet. <a href="{{ url_for('create') }}">Create the first one.</a></p>
+  {% endif %}
+</div>
+{% endblock %}

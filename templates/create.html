@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Create Your Board — 2026 Predictions Bingo{% endblock %}
+{% block content %}
+<div class="create-page">
+  <h1>Create Your Board</h1>
+  <p class="page-sub">Fill in 24 predictions. They'll be placed on a 5×5 bingo grid — the center square is always a free space.</p>
+
+  <form action="{{ url_for('create') }}" method="post" class="create-form">
+    <div class="identity-fields">
+      <div class="field">
+        <label for="name">Your name</label>
+        <input type="text" id="name" name="name" value="{{ form_data.get('name', '') }}" placeholder="e.g. Ryan" required>
+      </div>
+      <div class="field">
+        <label for="email">Email (for future notifications)</label>
+        <input type="email" id="email" name="email" value="{{ form_data.get('email', '') }}" placeholder="you@example.com" required>
+      </div>
+    </div>
+
+    <div class="board-preview-label">
+      <span>Your 5×5 board — fill in each cell</span>
+    </div>
+
+    <div class="board-grid create-grid">
+      <div class="bingo-header">
+        <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+      </div>
+      {% set pred_index = namespace(value=0) %}
+      {% for pos in range(25) %}
+        {% if pos == 12 %}
+          <div class="cell cell-free">
+            <span class="free-star">⭐</span>
+            <span class="free-label">FREE</span>
+          </div>
+        {% else %}
+          <div class="cell cell-input">
+            <textarea
+              name="pred_{{ pred_index.value }}"
+              placeholder="Prediction…"
+              rows="3"
+              required
+            >{{ form_data.get('pred_' ~ pred_index.value, '') }}</textarea>
+          </div>
+          {% set pred_index.value = pred_index.value + 1 %}
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="create-footer">
+      <button type="submit" class="btn btn-primary btn-large">Generate My Board</button>
+    </div>
+  </form>
+</div>
+<script src="{{ url_for('static', filename='create.js') }}"></script>
+{% endblock %}

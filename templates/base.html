@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}2026 Predictions Bingo{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{ url_for('index') }}" class="site-title">2026 Predictions Bingo</a>
+    <nav>
+      <a href="{{ url_for('create') }}">New Board</a>
+      {% if session.get('admin') %}
+        <a href="{{ url_for('admin_home') }}">Admin</a>
+        <a href="{{ url_for('admin_clusters') }}">Clusters</a>
+        <a href="{{ url_for('admin_logout') }}">Log Out</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for msg in messages %}
+            <div class="flash">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

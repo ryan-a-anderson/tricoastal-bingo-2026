@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ board['name'] }}'s Board — 2026 Predictions Bingo{% endblock %}
+{% block content %}
+
+{% if is_new %}
+<div class="new-board-banner">
+  <div class="new-board-inner">
+    <strong>Your board is created!</strong> Save your secret phrase — you'll need it to find this page again.
+    <div class="phrase-display">{{ board['phrase'] }}</div>
+    <div class="phrase-url">
+      Your board URL: <code>{{ request.host_url }}board/{{ board['phrase'] }}</code>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="board-page">
+  <div class="board-header">
+    <h1>{{ board['name'] }}'s Board</h1>
+    {% if has_bingo %}
+      <div class="bingo-badge">🎉 BINGO!</div>
+    {% endif %}
+  </div>
+
+  <div class="phrase-hint">
+    Secret phrase: <strong>{{ board['phrase'] }}</strong>
+  </div>
+
+  <div class="board-grid view-grid">
+    <div class="bingo-header">
+      <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+    </div>
+    {% for pred in predictions %}
+      {% set pos = pred['position'] %}
+      {% set in_bingo = pos in bingo_cells %}
+      <div class="cell
+        {% if pred['status'] == 'free' %} cell-free
+        {% elif pred['status'] == 'success' %} cell-success{% if in_bingo %} cell-bingo{% endif %}
+        {% elif pred['status'] == 'fail' %} cell-fail
+        {% else %} cell-pending
+        {% endif %}
+      ">
+        {% if pred['status'] == 'free' %}
+          <span class="free-star">⭐</span>
+          <span class="free-label">FREE</span>
+        {% else %}
+          <span class="cell-text">{{ pred['text'] }}</span>
+          {% if pred['status'] == 'success' %}
+            <span class="status-icon">✓</span>
+          {% elif pred['status'] == 'fail' %}
+            <span class="status-icon">✗</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="legend">
+    <span class="legend-item"><span class="swatch swatch-pending"></span> Pending</span>
+    <span class="legend-item"><span class="swatch swatch-success"></span> Correct</span>
+    <span class="legend-item"><span class="swatch swatch-fail"></span> Wrong</span>
+    <span class="legend-item"><span class="swatch swatch-free"></span> Free Space</span>
+  </div>
+</div>
+{% endblock %}

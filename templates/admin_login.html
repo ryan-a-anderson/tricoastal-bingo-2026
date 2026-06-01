@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Admin Login — 2026 Predictions Bingo{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <h1>Admin Login</h1>
+  <form action="{{ url_for('admin_login') }}" method="post" class="auth-form">
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autofocus required>
+    </div>
+    <button type="submit" class="btn btn-primary">Log In</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+.env
+bingo.db
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+*.egg-info

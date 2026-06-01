@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ board['name'] }}'s Board — Admin{% endblock %}
+{% block content %}
+<div class="admin-page">
+  <div class="admin-board-header">
+    <div>
+      <h1>{{ board['name'] }}'s Board</h1>
+      <p class="phrase-hint">{{ board['phrase'] }} · {{ board['email'] }}</p>
+    </div>
+    <div>
+      {% if has_bingo %}<span class="bingo-badge">🎉 BINGO!</span>{% endif %}
+      <a href="{{ url_for('board', phrase=board['phrase']) }}" class="btn btn-ghost" target="_blank">Public View ↗</a>
+      <a href="{{ url_for('admin_home') }}" class="btn btn-ghost">← All Boards</a>
+    </div>
+  </div>
+
+  {% set pending_sug = predictions | selectattr('sug_id') | selectattr('status', 'equalto', 'pending') | list %}
+  {% if pending_sug %}
+    <div class="sug-summary">
+      🤖 <strong>{{ pending_sug | length }} AI suggestion{{ 's' if pending_sug | length != 1 }}</strong> ready for review — scroll down or look for the highlighted cells.
+    </div>
+  {% endif %}
+
+  <div class="board-grid admin-grid">
+    <div class="bingo-header">
+      <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+    </div>
+    {% for pred in predictions %}
+      {% set pos = pred['position'] %}
+      {% set in_bingo = pos in bingo_cells %}
+      {% set has_sug = pred['sug_id'] and pred['status'] == 'pending' %}
+      <div class="cell
+        {% if pred['status'] == 'free' %} cell-free
+        {% elif pred['status'] == 'success' %} cell-success{% if in_bingo %} cell-bingo{% endif %}
+        {% elif pred['status'] == 'fail' %} cell-fail
+        {% else %} cell-pending
+        {% endif %}
+        admin-cell
+        {% if has_sug %} cell-has-sug{% endif %}
+      ">
+        {% if pred['status'] == 'free' %}
+          <span class="free-star">⭐</span>
+          <span class="free-label">FREE</span>
+        {% else %}
+          <span class="cell-text">{{ pred['text'] }}</span>
+
+          <div class="admin-controls">
+            {% for s, label in [('success', '✓'), ('pending', '·'), ('fail', '✗')] %}
+              <form method="post" action="{{ url_for('update_prediction', board_id=board['id'], pred_id=pred['id']) }}" style="display:inline">
+                <input type="hidden" name="status" value="{{ s }}">
+                <button type="submit" class="status-btn status-{{ s }}{% if pred['status'] == s %} active{% endif %}" title="{{ s }}">{{ label }}</button>
+              </form>
+            {% endfor %}
+          </div>
+
+          {% if has_sug %}
+            <div class="suggestion-chip">
+              <span class="sug-icon">🤖</span>
+              <span class="sug-verdict sug-{{ pred['suggested_status'] }}">
+                {% if pred['suggested_status'] == 'success' %}✓ Correct
+                {% elif pred['suggested_status'] == 'fail' %}✗ Wrong
+                {% else %}? Unclear{% endif %}
+              </span>
+              <span class="sug-conf">{{ (pred['confidence'] * 100) | round | int }}%</span>
+              <div class="sug-evidence" title="{{ pred['evidence'] }}">{{ pred['evidence'][:80] }}{% if pred['evidence'] | length > 80 %}…{% endif %}</div>
+              {% if pred['market_url'] %}
+                <a href="{{ pred['market_url'] }}" target="_blank" class="sug-source-link">{{ pred['sug_source'] }} ↗</a>
+              {% else %}
+                <span class="sug-source-link">{{ pred['sug_source'] }}</span>
+              {% endif %}
+              <div class="sug-actions">
+                <form method="post" action="{{ url_for('apply_suggestion', sug_id=pred['sug_id']) }}" style="display:inline">
+                  <button type="submit" class="btn btn-sm sug-apply">Apply</button>
+                </form>
+                <form method="post" action="{{ url_for('dismiss_suggestion', sug_id=pred['sug_id']) }}" style="display:inline">
+                  <button type="submit" class="btn btn-sm btn-ghost">Dismiss</button>
+                </form>
+              </div>
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

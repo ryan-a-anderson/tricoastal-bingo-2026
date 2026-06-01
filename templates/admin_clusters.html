@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Prediction Clusters — Admin{% endblock %}
+{% block content %}
+<div class="admin-page">
+  <div class="admin-board-header">
+    <div>
+      <h1>Prediction Clusters</h1>
+      {% if generated_at %}
+        <p class="phrase-hint">Generated {{ generated_at[:16] }} UTC · {{ data.total_unique }} unique predictions in {{ data.k }} clusters</p>
+      {% endif %}
+    </div>
+    <div>
+      <a href="{{ url_for('admin_home') }}" class="btn btn-ghost">← All Boards</a>
+    </div>
+  </div>
+
+  {% if not data %}
+    <div class="empty-state">
+      <p>No cluster data yet.</p>
+      <p style="margin-top:0.5rem;font-size:0.9rem">Run <code>python clusterer.py</code> to generate clusters from all predictions.</p>
+    </div>
+  {% else %}
+    <div class="cluster-grid">
+      {% for cluster in data.clusters %}
+        <div class="cluster-card">
+          <div class="cluster-header">
+            <span class="cluster-label">{{ cluster.label }}</span>
+            <span class="cluster-count">{{ cluster.count }} prediction{{ 's' if cluster.count != 1 }}</span>
+          </div>
+          <ul class="cluster-predictions">
+            {% for pred in cluster.predictions %}
+              <li class="cluster-pred">
+                <span class="cluster-pred-text">{{ pred.text }}</span>
+                <span class="cluster-pred-meta">
+                  {{ pred.boards }} board{{ 's' if pred.boards != 1 }}
+                  {% if pred.successes %}<span class="sug-verdict sug-success"> · {{ pred.successes }}✓</span>{% endif %}
+                  {% if pred.fails %}<span class="sug-verdict sug-fail"> · {{ pred.fails }}✗</span>{% endif %}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:2rem;padding:1rem;background:#f9f7f3;border-radius:8px;font-size:0.82rem;color:#6b6660">
+      Re-run <code>python clusterer.py</code> to refresh after new boards are created. Use <code>--k N</code> to force a specific number of clusters.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

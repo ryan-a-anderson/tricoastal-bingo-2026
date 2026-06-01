@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}2026 Predictions Bingo{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>2026 Predictions Bingo</h1>
+  <p class="hero-sub">Make 24 predictions for 2026, get a 5×5 bingo board, and see how many you get right.</p>
+
+  <div class="hero-actions">
+    <a href="{{ url_for('create') }}" class="btn btn-primary">Create My Board</a>
+
+    <div class="divider">or find an existing board</div>
+
+    <form action="{{ url_for('find') }}" method="post" class="find-form">
+      <input type="text" name="phrase" placeholder="enter your secret phrase…" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn btn-secondary">Go</button>
+    </form>
+  </div>
+</div>
+
+<div class="how-it-works">
+  <h2>How it works</h2>
+  <ol>
+    <li>Write 24 predictions about what will happen in 2026.</li>
+    <li>We'll arrange them into a 5×5 bingo board with a free center space.</li>
+    <li>You'll get a secret phrase — bookmark your board URL or save the phrase.</li>
+    <li>As the year unfolds, an admin marks predictions right or wrong.</li>
+    <li>Get 5 in a row and you've got <strong>BINGO</strong>!</li>
+  </ol>
+</div>
+{% endblock %}
