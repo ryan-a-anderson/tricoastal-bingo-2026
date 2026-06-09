@@ -12,45 +12,61 @@ import argparse
 import json
 import math
 import os
-import sqlite3
 import time
 
 import numpy as np
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 from google import genai
 
 load_dotenv()
 
-DATABASE = os.path.join(os.path.dirname(__file__), 'bingo.db')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 
+class _Db:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 def get_db():
-    db = sqlite3.connect(DATABASE)
-    db.row_factory = sqlite3.Row
-    return db
+    return _Db(psycopg2.connect(DATABASE_URL))
 
 
 def ensure_tables(db):
-    db.executescript('''
-        CREATE TABLE IF NOT EXISTS embedding_cache (
+    for stmt in [
+        '''CREATE TABLE IF NOT EXISTS embedding_cache (
             text TEXT PRIMARY KEY,
             embedding TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS cluster_cache (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
+        )''',
+        '''CREATE TABLE IF NOT EXISTS cluster_cache (
+            id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
             result_json TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    ''')
+        )''',
+    ]:
+        db.execute(stmt)
     db.commit()
 
 
 def get_embedding(text, client, db, rebuild=False):
     """Fetch embedding from cache or API."""
     if not rebuild:
-        row = db.execute('SELECT embedding FROM embedding_cache WHERE text = ?', (text,)).fetchone()
+        row = db.execute('SELECT embedding FROM embedding_cache WHERE text = %s', (text,)).fetchone()
         if row:
             return json.loads(row['embedding'])
 
@@ -60,7 +76,8 @@ def get_embedding(text, client, db, rebuild=False):
     )
     emb = result.embeddings[0].values
     db.execute(
-        'INSERT OR REPLACE INTO embedding_cache (text, embedding, created_at) VALUES (?, ?, datetime("now"))',
+        'INSERT INTO embedding_cache (text, embedding, created_at) VALUES (%s, %s, NOW()) '
+        'ON CONFLICT (text) DO UPDATE SET embedding = EXCLUDED.embedding, created_at = NOW()',
         (text, json.dumps(emb))
     )
     db.commit()
@@ -191,7 +208,8 @@ def main():
     }
 
     db.execute(
-        'INSERT OR REPLACE INTO cluster_cache (id, result_json, created_at) VALUES (1, ?, datetime("now"))',
+        'INSERT INTO cluster_cache (id, result_json, created_at) VALUES (1, %s, NOW()) '
+        'ON CONFLICT (id) DO UPDATE SET result_json = EXCLUDED.result_json, created_at = NOW()',
         (json.dumps(result),)
     )
     db.commit()

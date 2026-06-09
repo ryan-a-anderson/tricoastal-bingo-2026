@@ -1,9 +1,11 @@
 import hashlib
+import json
 import random
 import re
-import sqlite3
 from datetime import datetime
 
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 from flask import (Flask, flash, g, jsonify, redirect, render_template,
                    request, session, url_for)
@@ -14,10 +16,7 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 
-DATABASE = os.environ.get(
-    'DATABASE_PATH',
-    os.path.join(os.path.dirname(__file__), 'bingo.db')
-)
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH', '')
 
 ADJECTIVES = [
@@ -33,7 +32,7 @@ ADJECTIVES = [
     'storm', 'strange', 'strong', 'subtle', 'sunny', 'swift', 'tall', 'tame',
     'teal', 'thin', 'thorn', 'timid', 'tough', 'true', 'vast', 'velvet',
     'vivid', 'warm', 'wild', 'wise', 'worn', 'young', 'zealous', 'frozen',
-    'hollow', 'misty', 'neon', 'obsidian', 'pewter', 'russet', 'verdant',
+    'neon', 'obsidian', 'pewter', 'russet', 'verdant',
 ]
 
 NOUNS = [
@@ -61,10 +60,26 @@ def generate_phrase():
     return f"{random.choice(ADJECTIVES)}-{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"
 
 
+class _Db:
+    """Thin psycopg2 wrapper matching the sqlite3 execute/fetchone/fetchall pattern."""
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
+        g.db = _Db(psycopg2.connect(DATABASE_URL))
     return g.db
 
 
@@ -78,49 +93,44 @@ def close_db(e=None):
 def init_db():
     with app.app_context():
         db = get_db()
-        db.executescript('''
-            CREATE TABLE IF NOT EXISTS boards (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+        for stmt in [
+            '''CREATE TABLE IF NOT EXISTS boards (
+                id SERIAL PRIMARY KEY,
                 phrase TEXT UNIQUE NOT NULL,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS predictions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                board_id INTEGER NOT NULL,
+            )''',
+            '''CREATE TABLE IF NOT EXISTS predictions (
+                id SERIAL PRIMARY KEY,
+                board_id INTEGER NOT NULL REFERENCES boards(id),
                 position INTEGER NOT NULL,
                 text TEXT NOT NULL,
                 status TEXT DEFAULT 'pending',
-                updated_at TIMESTAMP,
-                FOREIGN KEY (board_id) REFERENCES boards(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS suggestions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                prediction_id INTEGER NOT NULL UNIQUE,
+                updated_at TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS suggestions (
+                id SERIAL PRIMARY KEY,
+                prediction_id INTEGER NOT NULL UNIQUE REFERENCES predictions(id),
                 source TEXT NOT NULL,
                 suggested_status TEXT NOT NULL,
                 confidence REAL,
                 evidence TEXT,
                 market_url TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (prediction_id) REFERENCES predictions(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS embedding_cache (
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS embedding_cache (
                 text TEXT PRIMARY KEY,
                 embedding TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS cluster_cache (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
+            )''',
+            '''CREATE TABLE IF NOT EXISTS cluster_cache (
+                id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
                 result_json TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
+            )''',
+        ]:
+            db.execute(stmt)
         db.commit()
 
 
@@ -182,7 +192,7 @@ def create():
         phrase = None
         for _ in range(20):
             candidate = generate_phrase()
-            if not db.execute('SELECT id FROM boards WHERE phrase = ?', (candidate,)).fetchone():
+            if not db.execute('SELECT id FROM boards WHERE phrase = %s', (candidate,)).fetchone():
                 phrase = candidate
                 break
 
@@ -190,22 +200,22 @@ def create():
             flash('Could not generate a unique phrase. Please try again.')
             return render_template('create.html', form_data=request.form)
 
-        cursor = db.execute(
-            'INSERT INTO boards (phrase, name, email) VALUES (?, ?, ?)',
+        row = db.execute(
+            'INSERT INTO boards (phrase, name, email) VALUES (%s, %s, %s) RETURNING id',
             (phrase, name, email)
-        )
-        board_id = cursor.lastrowid
+        ).fetchone()
+        board_id = row['id']
 
         pred_index = 0
         for pos in range(25):
             if pos == 12:
                 db.execute(
-                    'INSERT INTO predictions (board_id, position, text, status) VALUES (?, ?, ?, ?)',
-                    (board_id, pos, 'FREE SPACE', 'free')
+                    "INSERT INTO predictions (board_id, position, text, status) VALUES (%s, %s, %s, 'free')",
+                    (board_id, pos, 'FREE SPACE')
                 )
             else:
                 db.execute(
-                    'INSERT INTO predictions (board_id, position, text) VALUES (?, ?, ?)',
+                    'INSERT INTO predictions (board_id, position, text) VALUES (%s, %s, %s)',
                     (board_id, pos, raw[pred_index])
                 )
                 pred_index += 1
@@ -219,12 +229,12 @@ def create():
 @app.route('/board/<phrase>')
 def board(phrase):
     db = get_db()
-    board_row = db.execute('SELECT * FROM boards WHERE phrase = ?', (phrase,)).fetchone()
+    board_row = db.execute('SELECT * FROM boards WHERE phrase = %s', (phrase,)).fetchone()
     if not board_row:
         flash("Board not found. Double-check your secret phrase.")
         return redirect(url_for('index'))
     preds = db.execute(
-        'SELECT * FROM predictions WHERE board_id = ? ORDER BY position',
+        'SELECT * FROM predictions WHERE board_id = %s ORDER BY position',
         (board_row['id'],)
     ).fetchall()
     statuses = [p['status'] for p in preds]
@@ -261,7 +271,7 @@ def admin_home():
         return redirect(url_for('admin_login'))
     db = get_db()
     boards = db.execute(
-        'SELECT b.*, COUNT(p.id) FILTER (WHERE p.status = "success") AS hits '
+        "SELECT b.*, COUNT(p.id) FILTER (WHERE p.status = 'success') AS hits "
         'FROM boards b LEFT JOIN predictions p ON p.board_id = b.id '
         'GROUP BY b.id ORDER BY b.created_at DESC'
     ).fetchall()
@@ -273,7 +283,7 @@ def admin_board(board_id):
     if not session.get('admin'):
         return redirect(url_for('admin_login'))
     db = get_db()
-    board_row = db.execute('SELECT * FROM boards WHERE id = ?', (board_id,)).fetchone()
+    board_row = db.execute('SELECT * FROM boards WHERE id = %s', (board_id,)).fetchone()
     if not board_row:
         flash('Board not found.')
         return redirect(url_for('admin_home'))
@@ -282,7 +292,7 @@ def admin_board(board_id):
         's.suggested_status, s.confidence, s.evidence, s.market_url '
         'FROM predictions p '
         'LEFT JOIN suggestions s ON s.prediction_id = p.id '
-        'WHERE p.board_id = ? ORDER BY p.position',
+        'WHERE p.board_id = %s ORDER BY p.position',
         (board_id,)
     ).fetchall()
     statuses = [p['status'] for p in preds]
@@ -302,11 +312,11 @@ def update_prediction(board_id, pred_id):
         return redirect(url_for('admin_board', board_id=board_id))
     db = get_db()
     db.execute(
-        'UPDATE predictions SET status = ?, updated_at = ? WHERE id = ? AND board_id = ? AND status != "free"',
+        "UPDATE predictions SET status = %s, updated_at = %s "
+        "WHERE id = %s AND board_id = %s AND status != 'free'",
         (status, datetime.utcnow().isoformat(), pred_id, board_id)
     )
-    # Clear any pending suggestion since admin has manually resolved it
-    db.execute('DELETE FROM suggestions WHERE prediction_id = ?', (pred_id,))
+    db.execute('DELETE FROM suggestions WHERE prediction_id = %s', (pred_id,))
     db.commit()
     return redirect(url_for('admin_board', board_id=board_id))
 
@@ -317,7 +327,8 @@ def apply_suggestion(sug_id):
         return redirect(url_for('admin_login'))
     db = get_db()
     sug = db.execute(
-        'SELECT s.*, p.board_id FROM suggestions s JOIN predictions p ON p.id = s.prediction_id WHERE s.id = ?',
+        'SELECT s.*, p.board_id FROM suggestions s '
+        'JOIN predictions p ON p.id = s.prediction_id WHERE s.id = %s',
         (sug_id,)
     ).fetchone()
     if not sug:
@@ -325,10 +336,10 @@ def apply_suggestion(sug_id):
         return redirect(url_for('admin_home'))
     board_id = sug['board_id']
     db.execute(
-        'UPDATE predictions SET status = ?, updated_at = ? WHERE id = ? AND status != "free"',
+        "UPDATE predictions SET status = %s, updated_at = %s WHERE id = %s AND status != 'free'",
         (sug['suggested_status'], datetime.utcnow().isoformat(), sug['prediction_id'])
     )
-    db.execute('DELETE FROM suggestions WHERE id = ?', (sug_id,))
+    db.execute('DELETE FROM suggestions WHERE id = %s', (sug_id,))
     db.commit()
     return redirect(url_for('admin_board', board_id=board_id))
 
@@ -339,11 +350,12 @@ def dismiss_suggestion(sug_id):
         return redirect(url_for('admin_login'))
     db = get_db()
     sug = db.execute(
-        'SELECT s.*, p.board_id FROM suggestions s JOIN predictions p ON p.id = s.prediction_id WHERE s.id = ?',
+        'SELECT s.*, p.board_id FROM suggestions s '
+        'JOIN predictions p ON p.id = s.prediction_id WHERE s.id = %s',
         (sug_id,)
     ).fetchone()
     board_id = sug['board_id'] if sug else None
-    db.execute('DELETE FROM suggestions WHERE id = ?', (sug_id,))
+    db.execute('DELETE FROM suggestions WHERE id = %s', (sug_id,))
     db.commit()
     if board_id:
         return redirect(url_for('admin_board', board_id=board_id))
@@ -359,7 +371,6 @@ def admin_clusters():
     clusters_data = None
     generated_at = None
     if row:
-        import json
         clusters_data = json.loads(row['result_json'])
         generated_at = row['created_at']
     return render_template('admin_clusters.html', data=clusters_data, generated_at=generated_at)
@@ -386,12 +397,12 @@ def api_similar():
         return jsonify({'count': 0, 'examples': []})
 
     db = get_db()
-    placeholders = ' OR '.join(['LOWER(p.text) LIKE ?' for _ in words])
+    placeholders = ' OR '.join(["LOWER(p.text) LIKE %s" for _ in words])
     params = [f'%{w}%' for w in words]
 
     rows = db.execute(
-        f'SELECT p.text, p.board_id FROM predictions p '
-        f'WHERE p.status != "free" AND ({placeholders})',
+        f"SELECT p.text, p.board_id FROM predictions p "
+        f"WHERE p.status != 'free' AND ({placeholders})",
         params
     ).fetchall()
 
@@ -408,9 +419,9 @@ def api_similar():
     return jsonify({'count': len(board_ids), 'examples': examples})
 
 
-# Initialize DB on import — safe to call multiple times (all IF NOT EXISTS)
 with app.app_context():
-    init_db()
+    if DATABASE_URL:
+        init_db()
 
 if __name__ == '__main__':
     app.run(debug=True)

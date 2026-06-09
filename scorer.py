@@ -14,6 +14,8 @@ import sqlite3
 import time
 from datetime import datetime
 
+import psycopg2
+import psycopg2.extras
 import requests
 from dotenv import load_dotenv
 from google import genai
@@ -21,29 +23,42 @@ from google.genai import types
 
 load_dotenv()
 
-DATABASE = os.path.join(os.path.dirname(__file__), 'bingo.db')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 
+class _Db:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 def get_db():
-    db = sqlite3.connect(DATABASE)
-    db.row_factory = sqlite3.Row
-    return db
+    return _Db(psycopg2.connect(DATABASE_URL))
 
 
 def ensure_suggestions_table(db):
-    db.executescript('''
+    db.execute('''
         CREATE TABLE IF NOT EXISTS suggestions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prediction_id INTEGER NOT NULL UNIQUE,
+            id SERIAL PRIMARY KEY,
+            prediction_id INTEGER NOT NULL UNIQUE REFERENCES predictions(id),
             source TEXT NOT NULL,
             suggested_status TEXT NOT NULL,
             confidence REAL,
             evidence TEXT,
             market_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (prediction_id) REFERENCES predictions(id)
-        );
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
     db.commit()
 
@@ -159,14 +174,14 @@ def main():
     db = get_db()
     ensure_suggestions_table(db)
 
-    pending = db.execute('''
-        SELECT p.id, p.text, b.name
-        FROM predictions p
-        JOIN boards b ON b.id = p.board_id
-        LEFT JOIN suggestions s ON s.prediction_id = p.id
-        WHERE p.status = 'pending' AND s.id IS NULL
-        ORDER BY p.text
-    ''').fetchall()
+    pending = db.execute(
+        'SELECT p.id, p.text, b.name '
+        'FROM predictions p '
+        'JOIN boards b ON b.id = p.board_id '
+        'LEFT JOIN suggestions s ON s.prediction_id = p.id '
+        "WHERE p.status = 'pending' AND s.id IS NULL "
+        'ORDER BY p.text'
+    ).fetchall()
 
     if not pending:
         print('Nothing to score — all pending predictions already have suggestions.')
@@ -206,9 +221,9 @@ def main():
             saved += 1
         else:
             db.execute(
-                'INSERT OR IGNORE INTO suggestions '
+                'INSERT INTO suggestions '
                 '(prediction_id, source, suggested_status, confidence, evidence, market_url, created_at) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (prediction_id) DO NOTHING',
                 (pred['id'], result['source'], result['suggested_status'],
                  result['confidence'], result['evidence'], result['market_url'],
                  datetime.utcnow().isoformat())
