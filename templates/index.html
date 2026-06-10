@@ -5,6 +5,30 @@
   <h1>2026 Predictions Bingo</h1>
   <p class="hero-sub">Make 24 predictions for 2026, get a 5×5 bingo board, and see how many you get right.</p>
 
+  {% if stats and stats['total_boards'] > 0 %}
+  <div class="hero-stats">
+    <div class="stat">
+      <span class="stat-num">{{ stats['total_boards'] }}</span>
+      <span class="stat-label">board{{ 's' if stats['total_boards'] != 1 }}</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-num stat-correct">{{ stats['correct'] }}</span>
+      <span class="stat-label">correct</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-num stat-wrong">{{ stats['wrong'] }}</span>
+      <span class="stat-label">wrong</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-num">{{ stats['pending'] }}</span>
+      <span class="stat-label">pending</span>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="hero-actions">
     <a href="{{ url_for('create') }}" class="btn btn-primary">Create My Board</a>
 

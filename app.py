@@ -153,7 +153,21 @@ def get_bingo_lines(statuses):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    stats = None
+    if DATABASE_URL:
+        try:
+            db = get_db()
+            stats = db.execute(
+                "SELECT "
+                "  COUNT(DISTINCT b.id) AS total_boards, "
+                "  COUNT(p.id) FILTER (WHERE p.status = 'success') AS correct, "
+                "  COUNT(p.id) FILTER (WHERE p.status = 'fail') AS wrong, "
+                "  COUNT(p.id) FILTER (WHERE p.status = 'pending') AS pending "
+                "FROM boards b LEFT JOIN predictions p ON p.board_id = b.id"
+            ).fetchone()
+        except Exception:
+            pass
+    return render_template('index.html', stats=stats)
 
 
 @app.route('/find', methods=['POST'])
