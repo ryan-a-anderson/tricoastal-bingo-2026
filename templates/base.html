@@ -4,7 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}2026 Predictions Bingo{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  {% set og_title = self.title() %}
+  {% set og_desc = "Make 24 predictions for 2026, fill your bingo board, and see how many you get right." %}
+  {% set og_image = request.host_url ~ 'static/og-image.png' %}
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="{{ request.url }}">
+  <meta property="og:title"       content="{{ og_title }}">
+  <meta property="og:description" content="{{ og_desc }}">
+  <meta property="og:image"       content="{{ og_image }}">
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:title"       content="{{ og_title }}">
+  <meta name="twitter:description" content="{{ og_desc }}">
+  <meta name="twitter:image"       content="{{ og_image }}">
 </head>
 <body>
   <header class="site-header">
